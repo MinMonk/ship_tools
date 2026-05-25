@@ -5,6 +5,7 @@ import csv
 
 import openpyxl
 from src.invoice.process_chidao import fill_chidao_template
+from src.invoice.process_jiufang import validate_jiufang_partner_files, fill_jiufang_template
 from src.utils.excel_utils import insert_image_into_cell, img_attr, center_style, left_newline, copy_row_style
 from src.utils.common_utils import format_current_date, root_dir
 from src.constants.carriers import Carrier
@@ -772,6 +773,7 @@ def run_invoice(global_info, product_dict, package_dict):
     # 加载并验证 invoice 信息
     invoice_data = read_excel('./plan_data/开票信息.xlsx')
     logger.info('【开票信息】解析 & 校验完成...')
+    jiufang_files = validate_jiufang_partner_files(invoice_data, Carrier.JiuFang)
 
     # 加载 Amazon 后台下载的装箱数据
     ship_data = parse_shipment_csv('./shipment_data/', product_dict)
@@ -811,6 +813,10 @@ def run_invoice(global_info, product_dict, package_dict):
         elif invoice_type == Carrier.YiTongAnDa:
             fill_yitonganda_template(global_info, package_dict, invoice_record, current_ship_data)
             logger.info(f"【{shipment_id}】-【{repo_name}】开具[易通安达]发票成功...")
+            log_invoice_summary()
+        elif invoice_type == Carrier.JiuFang:
+            fill_jiufang_template(global_info, product_dict, package_dict, invoice_record, jiufang_files[shipment_id])
+            logger.info(f"【{shipment_id}】-【{repo_name}】开具[九方]发票成功...")
             log_invoice_summary()
         else:
             logger.info(f"未知的发票类型: {invoice_type}")

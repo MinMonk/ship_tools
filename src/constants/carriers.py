@@ -5,3 +5,4 @@ class Carrier:
     YiTongAnDa = "易通安达"
     YiGang = "壹港"
     BaiLiTong = "百利通"
+    JiuFang = "九方"

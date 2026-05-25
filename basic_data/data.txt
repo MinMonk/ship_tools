@@ -4,3 +4,6 @@ HS_Code=6302910000
 Material=纯棉/Cotton
 Usr_For=清洁/Clean
 Brand=SEMAXE
+Model=None
+Unit=盒
+Product_Attribute=普货（无任何电池）no battery
