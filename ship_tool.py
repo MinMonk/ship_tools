@@ -14,19 +14,34 @@ def main():
             'Ship Tool CLI\n'
             '可选指令:\n'
             '  invoice: 根据亚马逊后台货件装箱单数据，结合 plan_data/开票信息.xlsx，\n'
-            '           生成货代公司的交接资料(发票)\n'
+            '           生成货代公司的交接资料(发票)。可选标签处理模式: FIST 或 SEND\n'
             '  plan   : 根据 plan_data/出货计划.xlsx，创建亚马逊后台批量货件模板及\n'
             '           领星 ERP 出货计划模板，方便导入系统'
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="示例: python3 ship_tool.py invoice"
+        epilog=(
+            "示例:\n"
+            "  python3 ship_tool.py invoice\n"
+            "  python3 ship_tool.py invoice SEND"
+        )
     )
     parser.add_argument(
         'command',
         choices=['invoice', 'plan'],
         help='指定要执行的功能: invoice 或 plan'
     )
+    parser.add_argument(
+        'invoice_mode',
+        nargs='?',
+        default='FIST',
+        type=str.upper,
+        choices=['FIST', 'SEND'],
+        help='invoice 命令的标签处理模式，默认 FIST；SEND 会按奇偶页拆分外箱标签'
+    )
     args = parser.parse_args()
+
+    if args.command == 'plan' and args.invoice_mode != 'FIST':
+        parser.error('invoice_mode 参数仅支持 invoice 命令')
 
     # 初始化日志
     setup_logging()
@@ -43,7 +58,7 @@ def main():
         logger.info("\033[33m ----------------------------------------------- \033[0m")
 
         logger.info(f"\033[36m▶ 裁剪FBA外箱标 开始执行  \033[0m")
-        process_fba_label()
+        process_fba_label(mode=args.invoice_mode)
         logger.info(f"\033[36m▶ 裁剪FBA外箱标 执行完毕  \033[0m")
 
     elif args.command == 'plan':
