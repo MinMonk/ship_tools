@@ -118,29 +118,48 @@ def crop_mark_label_pdf(input_path: str, output_path: str, **kwargs):
     return page_count
 
 
-def process_send_pdf(input_pdf_path, filename, cover_rects, crop_rect):
-    """SEND 模式：奇数页为 FBA 标签，偶数页为唛头标签。"""
+def save_fba_pages(src_doc, page_indexes, output_file, cover_rects, crop_rect):
+    """保存 FBA 标签页，并应用原有裁剪和擦除逻辑。"""
+    if not page_indexes:
+        return 0
+
+    out_doc = fitz.open()
+    for page_index in page_indexes:
+        out_doc.insert_pdf(src_doc, from_page=page_index, to_page=page_index)
+    apply_cover_and_crop(out_doc, cover_rects, crop_rect)
+    os.makedirs(os.path.dirname(output_file), exist_ok=True)
+    out_doc.save(output_file)
+    out_doc.close()
+    return len(page_indexes)
+
+
+def process_send_fba_pdf(input_pdf_path, filename, cover_rects, crop_rect):
+    """SEND 模式：奇数页为 FBA 标签。"""
     fba_output_dir = root_dir(DirType.FBA_Label)
-    mark_output_dir = root_dir(DirType.Mark_Label)
     os.makedirs(fba_output_dir, exist_ok=True)
-    os.makedirs(mark_output_dir, exist_ok=True)
 
     shipment_code = shipment_code_from_filename(filename)
     src_doc = fitz.open(input_pdf_path)
     odd_page_indexes = [idx for idx in range(len(src_doc)) if idx % 2 == 0]
-    even_page_indexes = [idx for idx in range(len(src_doc)) if idx % 2 == 1]
 
-    fba_doc = fitz.open()
-    for page_index in odd_page_indexes:
-        fba_doc.insert_pdf(src_doc, from_page=page_index, to_page=page_index)
-    apply_cover_and_crop(fba_doc, cover_rects, crop_rect)
     fba_box_num = len(odd_page_indexes)
     fba_output_file = os.path.join(
         fba_output_dir, f"FBA标签_{shipment_code}_{fba_box_num}.pdf"
     )
-    fba_doc.save(fba_output_file)
-    fba_doc.close()
+    save_fba_pages(src_doc, odd_page_indexes, fba_output_file, cover_rects, crop_rect)
+    src_doc.close()
 
+    logger.debug(f"  已处理 SEND FBA 标签: {filename}")
+
+
+def process_send_mark_pdf(input_pdf_path, filename):
+    """SEND 模式：偶数页为唛头标签，并适配到 100x80mm。"""
+    mark_output_dir = root_dir(DirType.Mark_Label)
+    os.makedirs(mark_output_dir, exist_ok=True)
+
+    shipment_code = shipment_code_from_filename(filename)
+    src_doc = fitz.open(input_pdf_path)
+    even_page_indexes = [idx for idx in range(len(src_doc)) if idx % 2 == 1]
     mark_box_num = len(even_page_indexes)
     mark_output_file = os.path.join(
         mark_output_dir, f"唛头_{shipment_code}_{mark_box_num}.pdf"
@@ -148,37 +167,49 @@ def process_send_pdf(input_pdf_path, filename, cover_rects, crop_rect):
     crop_mark_label_pages(src_doc, even_page_indexes, mark_output_file)
     src_doc.close()
 
-    logger.debug(f"  已处理 SEND 标签: {filename}")
+    logger.debug(f"  已处理 SEND 唛头: {filename}")
 
 
-def process_fba_label(region: str = "US", mode: str = "FIST") -> str:
+def process_fba_label(region: str = "US", mode: str = "FIST", label_type: str = "fba") -> str:
     input_dir = './shipment_data'
-    output_path = root_dir(DirType.FBA_Label)
+    label_type = label_type.lower()
+    output_path = root_dir(DirType.Mark_Label if label_type == "mark" else DirType.FBA_Label)
     os.makedirs(output_path, exist_ok=True)
     mode = mode.upper()
 
     # 获取区域参数
-    logger.info(f"\033[36m▶ 当前模式：{region}\033[0m")
+    if label_type == "fba":
+        logger.info(f"\033[36m▶ 当前模式：{region}\033[0m")
     logger.info(f"\033[36m▶ 标签处理模式：{mode}\033[0m")
 
     # 根据区域选择覆盖的矩形区域
-    if region == "US":
-        cover_rects = [fitz.Rect(27, 33, 130, 42)]
-        logger.info("🔸 操作：裁剪页面 + 擦除目的地公司名称")
+    if label_type == "mark":
+        cover_rects = []
+        crop_rect = None
+        logger.info("🔸 操作：裁剪页面")
     else:
-        cover_rects = [fitz.Rect(27, 33, 130, 42), fitz.Rect(150, 24, 280, 70)]
-        logger.info("🔸 操作：裁剪页面 + 擦除目的地公司名称及发货地信息")
+        if region == "US":
+            cover_rects = [fitz.Rect(27, 33, 130, 42)]
+            logger.info("🔸 操作：裁剪页面 + 擦除目的地公司名称")
+        else:
+            cover_rects = [fitz.Rect(27, 33, 130, 42), fitz.Rect(150, 24, 280, 70)]
+            logger.info("🔸 操作：裁剪页面 + 擦除目的地公司名称及发货地信息")
 
-    # 固定裁剪区域
-    crop_rect = fitz.Rect(0, 0, 306, 230)
+        # 固定裁剪区域
+        crop_rect = fitz.Rect(0, 0, 306, 230)
 
     # 处理文件
     processed_files = 0
     for filename in os.listdir(input_dir):
         if filename.endswith('.pdf'):
             input_pdf_path = os.path.join(input_dir, filename)
-            if mode == "SEND":
-                process_send_pdf(input_pdf_path, filename, cover_rects, crop_rect)
+            if label_type == "mark":
+                if mode == "SEND":
+                    process_send_mark_pdf(input_pdf_path, filename)
+                else:
+                    continue
+            elif mode == "SEND":
+                process_send_fba_pdf(input_pdf_path, filename, cover_rects, crop_rect)
             else:
                 output_pdf_path = os.path.join(output_path, filename)
                 cover_and_crop_pdf(input_pdf_path, output_pdf_path, cover_rects, crop_rect)

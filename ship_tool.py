@@ -57,9 +57,16 @@ def main():
 
         logger.info("\033[33m ----------------------------------------------- \033[0m")
 
-        logger.info(f"\033[36m▶ 裁剪FBA外箱标 开始执行  \033[0m")
-        process_fba_label(mode=args.invoice_mode)
-        logger.info(f"\033[36m▶ 裁剪FBA外箱标 执行完毕  \033[0m")
+        logger.info(f"\033[36m▶ 裁剪【FBA外箱标】开始执行  \033[0m")
+        process_fba_label(mode=args.invoice_mode, label_type="fba")
+        logger.info(f"\033[36m▶ 裁剪【FBA外箱标】执行完毕  \033[0m")
+
+        if args.invoice_mode == 'SEND':
+            logger.info("\033[33m ----------------------------------------------- \033[0m")
+
+            logger.info(f"\033[36m▶ 裁剪【唛头】开始执行  \033[0m")
+            process_fba_label(mode=args.invoice_mode, label_type="mark")
+            logger.info(f"\033[36m▶ 裁剪【唛头】执行完毕  \033[0m")
 
     elif args.command == 'plan':
         logger.info(f"\033[36m▶ PLAN 开始执行  \033[0m")
