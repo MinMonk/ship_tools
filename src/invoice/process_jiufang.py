@@ -33,6 +33,10 @@ GENERAL_TO_EXCEL_COLUMNS = {
 }
 
 
+def invoice_value(row, key):
+    return row.get(key)
+
+
 def clean_cell(value: Any) -> str:
     return "" if value is None else str(value).strip()
 
@@ -101,8 +105,8 @@ def validate_jiufang_partner_files(invoice_data, carrier_name: str, partner_dir:
     warnings: list[str] = []
 
     for invoice_record in invoice_data:
-        shipment_id = clean_cell(invoice_record[0])
-        invoice_type = clean_cell(invoice_record[3])
+        shipment_id = clean_cell(invoice_value(invoice_record, "货件ID"))
+        invoice_type = clean_cell(invoice_value(invoice_record, "物流商"))
         if invoice_type != carrier_name:
             continue
 
@@ -148,8 +152,8 @@ def validate_basic_fields(global_info: dict[str, Any]) -> None:
 def fill_jiufang_template(global_info, product_dict, package_dict, invoice_record, excel_path: Path) -> str:
     validate_basic_fields(global_info)
 
-    shipment_id = clean_cell(invoice_record[0])
-    reference_id = clean_cell(invoice_record[1])
+    shipment_id = clean_cell(invoice_value(invoice_record, "货件ID"))
+    reference_id = clean_cell(invoice_value(invoice_record, "追踪编号"))
     if not reference_id:
         raise ValueError(f"【{shipment_id}】找不到 Reference ID（开票信息.xlsx 的追踪编号为空）")
 

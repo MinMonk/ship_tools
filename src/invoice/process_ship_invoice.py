@@ -14,6 +14,20 @@ from src.summary.process_summary import summarize_shipment
 
 logger = logging.getLogger(__name__)
 
+INVOICE_HEADERS = [
+    "货件ID",
+    "追踪编号",
+    "仓库代码",
+    "是否退税",
+    "物流商",
+    "物流模式",
+    "渠道类型",
+    "送货时间",
+    "预约船期",
+    "货件创建时间",
+]
+
+
 def invoice_output_path(carrier, repo_name, total_box_num):
     """
     定义发票的输出路径
@@ -27,61 +41,76 @@ def invoice_input_path(carrier):
     """
     return f"./basic_data/template/{DirType.Invoice}/{carrier}.xlsx"
 
+def normalize_header(value):
+    return str(value or "").strip().lstrip("*")
+
+
+def invoice_value(row, key):
+    return row.get(key)
+
+
 def validate_row(row):
     """
     对单行数据进行非空校验：
-      - 无论物流商（row[3]）为何值，前4列（货件ID、追踪编号、是否退税、物流商）均不能为空；
+      - 无论物流商为何值，货件ID、追踪编号、仓库代码、是否退税、物流商均不能为空；
       - 当物流商为 "赤道" 时，整行所有字段都不能为空；
-      - 当物流商为 "海桥" 时，除了前4列，要求送货时间（row[5]）也不能为空；
-      - 当物流商为 "紐酷" 时，要求渠道类型（row[4]）和送货时间（row[5]）均不能为空。
+      - 当物流商为 "海桥" 时，要求送货时间不能为空；
+      - 当物流商为 "紐酷" 时，要求渠道类型和送货时间均不能为空。
     返回一个缺失字段的列表，如果列表为空则说明该行校验通过。
     """
-    headers = ["货件ID", "追踪编号", "是否退税", "物流商", "渠道类型", "送货时间", "预约船期", "货件创建时间"]
     missing = []
-    # 1. 检查前4列：货件ID、追踪编号、是否退税、物流商
-    for i in range(4):
-        if i >= len(row) or row[i] is None or str(row[i]).strip() == '':
-            missing.append(headers[i])
+    required_headers = ["货件ID", "追踪编号", "仓库代码", "是否退税", "物流商"]
+    for header in required_headers:
+        if row.get(header) is None or str(row.get(header)).strip() == "":
+            missing.append(header)
     
-    # mode 从物流商列获取（row[3]）
-    mode = row[3] if len(row) > 3 else None
+    mode = row.get("物流商")
     if mode == "赤道":
-        # 赤道模式要求所有列都不能为空
-        for i in range(len(headers)):
-            if i >= len(row) or row[i] is None or str(row[i]).strip() == '':
-                if headers[i] not in missing:
-                    missing.append(headers[i])
+        # 赤道模式要求除物流模式外的业务字段都不能为空；物流模式当前仅占位。
+        for header in INVOICE_HEADERS:
+            if header == "物流模式":
+                continue
+            if row.get(header) is None or str(row.get(header)).strip() == "":
+                if header not in missing:
+                    missing.append(header)
     elif mode == "海桥":
-        # 海桥模式要求送货时间（row[5]）不能为空
-        if len(row) < 6 or row[5] is None or str(row[5]).strip() == '':
-            if headers[5] not in missing:
-                missing.append(headers[5])
+        if row.get("送货时间") is None or str(row.get("送货时间")).strip() == "":
+            if "送货时间" not in missing:
+                missing.append("送货时间")
     elif mode == "紐酷":
-        # 紐酷模式要求渠道类型（row[4]）和送货时间（row[5]）均不能为空
-        if len(row) < 5 or row[4] is None or str(row[4]).strip() == '':
-            if headers[4] not in missing:
-                missing.append(headers[4])
-        if len(row) < 6 or row[5] is None or str(row[5]).strip() == '':
-            if headers[5] not in missing:
-                missing.append(headers[5])
+        if row.get("渠道类型") is None or str(row.get("渠道类型")).strip() == "":
+            if "渠道类型" not in missing:
+                missing.append("渠道类型")
+        if row.get("送货时间") is None or str(row.get("送货时间")).strip() == "":
+            if "送货时间" not in missing:
+                missing.append("送货时间")
     return missing
 
 def read_excel(file_path, start_row=3):
     # 加载工作簿和默认工作表
     wb = openpyxl.load_workbook(file_path)
-    ws = wb.active
+    ws = wb["开票信息"] if "开票信息" in wb.sheetnames else wb.active
+
+    header_row = start_row - 1
+    headers = [normalize_header(cell.value) for cell in ws[header_row]]
+    header_set = set(headers)
+    missing_headers = [header for header in INVOICE_HEADERS if header not in header_set]
+    if missing_headers:
+        sys.exit(f"Excel数据校验失败，开票信息表头缺少字段：{'、'.join(missing_headers)}")
 
     # 从指定行开始读取数据
     valid_rows = []
     errors = []
-    for idx, row in enumerate(ws.iter_rows(min_row=start_row, values_only=True), start=start_row):
+    for idx, raw_row in enumerate(ws.iter_rows(min_row=start_row, values_only=True), start=start_row):
         # 检查整行是否为空（所有单元格都是None或空字符串）
-        if all(cell is None or (isinstance(cell, str) and cell.strip() == "") for cell in row):
+        if all(cell is None or (isinstance(cell, str) and cell.strip() == "") for cell in raw_row):
             continue  # 跳过完全空的行
+
+        row = {header: raw_row[index] if index < len(raw_row) else None for index, header in enumerate(headers) if header}
         
         missing_columns = validate_row(row)
         if missing_columns:
-            shipment_id = row[0] if len(row) > 0 and row[0] is not None else "未知"
+            shipment_id = row.get("货件ID") or "未知"
             missing_str = "、".join(missing_columns)
             errors.append(f"第{idx}行货件ID为 {shipment_id} 的数据，【{missing_str}】列不能为空")
         else:
@@ -209,13 +238,13 @@ def fill_niuku_template(global_info, package_dict, invoice_data, ship_data, star
 
     # 填充固定单元格
     # 客户单号
-    ws["B2"] = invoice_data[0]
+    ws["B2"] = invoice_value(invoice_data, "货件ID")
     # 国家
     ws["B3"] = "美国"
     # 海运/空运
     ws["B4"] = "海运"
     # 渠道名称
-    ws["B5"] = invoice_data[4]
+    ws["B5"] = invoice_value(invoice_data, "渠道类型")
     # 是否含税
     ws["B6"] = "含税"
     # 派送类型
@@ -227,13 +256,13 @@ def fill_niuku_template(global_info, package_dict, invoice_data, ship_data, star
     # 送货仓
     ws["B11"] = "深圳总仓"
     # 送货时间
-    ws["B12"] = invoice_data[5]
+    ws["B12"] = invoice_value(invoice_data, "送货时间")
     # 上门提货/装柜
     ws["B13"] = "不需要"
     # 购买保价服务
     ws["B14"] = "不需要"
     # 报关方式
-    ws["B15"] = "退税" if invoice_data[2] == "是" else "买单"
+    ws["B15"] = "退税" if invoice_value(invoice_data, "是否退税") == "是" else "买单"
     # 业务类型
     ws["B16"] = "FBA地址"
     # 仓库代码
@@ -314,11 +343,11 @@ def fill_niuku_template(global_info, package_dict, invoice_data, ship_data, star
         cell.value = round(float(gross_weight) * int(boxes), 1)
         cell.number_format = "0.00"
         # 第 27 列：发票中的货件编号
-        ws.cell(row=current_row, column=27, value=invoice_data[0])
+        ws.cell(row=current_row, column=27, value=invoice_value(invoice_data, "货件ID"))
         # 第 28 列：跟踪编号  取自./开票信息.csv
-        ws.cell(row=current_row, column=28, value=invoice_data[1])
+        ws.cell(row=current_row, column=28, value=invoice_value(invoice_data, "追踪编号"))
         # 第 29 列：货件创建时间  取自./开票信息.csv
-        ws.cell(row=current_row, column=29, value=invoice_data[7])
+        ws.cell(row=current_row, column=29, value=invoice_value(invoice_data, "货件创建时间"))
         # 第 30 列：FBA箱号  取自ship_data['list_data']
         package_seq = ",".join(data.get('package_seq'))
         ws.cell(row=current_row, column=30, value=package_seq)
@@ -362,9 +391,9 @@ def fill_pengchenghai_template(global_info, package_dict, invoice_data, ship_dat
     total_box_num = 0;
     for product_type, data in ship_data.get('list_data', {}).items():
         # 第 1 列：发票中的货件编号
-        ws.cell(row=current_row, column=1, value=invoice_data[0])
+        ws.cell(row=current_row, column=1, value=invoice_value(invoice_data, "货件ID"))
         # 第 2 列：跟踪编号  取自./开票信息.csv
-        ws.cell(row=current_row, column=2, value=invoice_data[1])
+        ws.cell(row=current_row, column=2, value=invoice_value(invoice_data, "追踪编号"))
         # 第 3 列：中文品名  取自./basic_data/data.txt
         ws.cell(row=current_row, column=3,
                 value=global_info.get('Product_Name_Cn'))
@@ -439,7 +468,7 @@ def fill_yigang_template(global_info, package_dict, invoice_data, ship_data, sta
 
     # 填充固定单元格
     # 客户单号
-    ws["B1"] = invoice_data[0]
+    ws["B1"] = invoice_value(invoice_data, "货件ID")
     # 仓库代码
     shipment_info = ship_data.get('shipment_info')
     repo_name = shipment_info.get('仓库名称')
@@ -448,7 +477,7 @@ def fill_yigang_template(global_info, package_dict, invoice_data, ship_data, sta
     address = shipment_info.get('配送地址')
     ws["B6"] = f"{repo_name} - {address}, US"
     # 报关方式
-    ws["F6"] = "报关退税" if invoice_data[2] == "是" else "买单"
+    ws["F6"] = "报关退税" if invoice_value(invoice_data, "是否退税") == "是" else "买单"
 
     # 准备图片插入相关信息
     image_errors = []
@@ -467,7 +496,7 @@ def fill_yigang_template(global_info, package_dict, invoice_data, ship_data, sta
         cell_1 = ws.cell(row=current_row, column=1)
         cell_1.alignment = left_newline
         # 第 2 列：跟踪编号  取自./开票信息.csv
-        ws.cell(row=current_row, column=2, value=invoice_data[1])
+        ws.cell(row=current_row, column=2, value=invoice_value(invoice_data, "追踪编号"))
         # 第 3 列：总毛重  单箱重量 * 箱数
         boxes = data.get('total_boxes')
         total_box_num += boxes
@@ -539,9 +568,9 @@ def fill_bailitong_template(global_info, package_dict, invoice_data, ship_data, 
 
     # 填充固定单元格
     # 客户单号
-    ws["B2"] = invoice_data[0]
+    ws["B2"] = invoice_value(invoice_data, "货件ID")
     # 报关方式
-    ws["B4"] = "报关退税" if invoice_data[2] == "是" else "买单报关"
+    ws["B4"] = "报关退税" if invoice_value(invoice_data, "是否退税") == "是" else "买单报关"
     # 仓库代码
     shipment_info = ship_data.get('shipment_info')
     repo_name = shipment_info.get('仓库名称')
@@ -566,7 +595,7 @@ def fill_bailitong_template(global_info, package_dict, invoice_data, ship_data, 
         cell_1 = ws.cell(row=current_row, column=1)
         cell_1.alignment = left_newline
         # 第 2 列：跟踪编号  取自./开票信息.csv
-        ws.cell(row=current_row, column=2, value=invoice_data[1])
+        ws.cell(row=current_row, column=2, value=invoice_value(invoice_data, "追踪编号"))
         # 第 3 列：英文品名 固定  取自./basic_data/data.txt
         ws.cell(row=current_row, column=3,
                 value=global_info.get('Product_Name_En'))
@@ -643,14 +672,14 @@ def fill_yitonganda_template(global_info, package_dict, invoice_data, ship_data,
 
     # 填充固定单元格
     # 客户单号
-    ws["B1"] = invoice_data[0]
-    ws["D1"] = invoice_data[0]
+    ws["B1"] = invoice_value(invoice_data, "货件ID")
+    ws["D1"] = invoice_value(invoice_data, "货件ID")
     # 交货仓库
     ws["B4"] = "深圳龙华仓"
     # 走货路线
-    ws["B4"] = invoice_data[4]
+    ws["B4"] = invoice_value(invoice_data, "渠道类型")
     # 报关方式
-    ws["B5"] = "单独报关" if invoice_data[2] == "是" else "买单报关"
+    ws["B5"] = "单独报关" if invoice_value(invoice_data, "是否退税") == "是" else "买单报关"
     # 仓库代码
     shipment_info = ship_data.get('shipment_info')
     repo_name = shipment_info.get('仓库名称')
@@ -681,7 +710,7 @@ def fill_yitonganda_template(global_info, package_dict, invoice_data, ship_data,
         cell_1 = ws.cell(row=current_row, column=1)
         cell_1.alignment = left_newline
         # 第 2 列：跟踪编号  取自./开票信息.csv
-        ws.cell(row=current_row, column=2, value=invoice_data[1])
+        ws.cell(row=current_row, column=2, value=invoice_value(invoice_data, "追踪编号"))
         # 第 3 列：中文品名  取自./basic_data/data.txt
         ws.cell(row=current_row, column=3, value=global_info.get('Product_Name_Cn'))
         # 第 4 列：英文品名 固定  取自./basic_data/data.txt
@@ -781,9 +810,9 @@ def run_invoice(global_info, product_dict, package_dict):
 
     # 基于./开票信息.csv 文件中维护的数据来生成发票
     for invoice_record in invoice_data:
-        shipment_id = invoice_record[0]
-        invoice_type = invoice_record[3]
-        repo_name = invoice_record[8]
+        shipment_id = invoice_value(invoice_record, "货件ID")
+        invoice_type = invoice_value(invoice_record, "物流商")
+        repo_name = invoice_value(invoice_record, "仓库代码")
         current_ship_data = ship_data.get(shipment_id)
 
         def log_invoice_summary():

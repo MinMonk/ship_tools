@@ -9,6 +9,10 @@ from src.utils.excel_utils import insert_image_into_cell, clean_sheet_data, img_
 logger = logging.getLogger(__name__)
 
 
+def invoice_value(row, key):
+    return row.get(key)
+
+
 def fill_chidao_sheet(ws, global_info, package_dict, invoice_data, ship_data, start_row=12):
     """
     ✅ 辅函数：对传入的 ws 执行“原单元格填充逻辑”（保持不变）
@@ -18,10 +22,10 @@ def fill_chidao_sheet(ws, global_info, package_dict, invoice_data, ship_data, st
     repo_name = shipment_info.get("仓库名称")
 
     ws["C4"] = "AMAZON-" + repo_name
-    ws["C6"] = invoice_data[4]
-    ws["C7"] = "有单证" if invoice_data[2] == "是" else "无单证"
-    ws["C8"] = invoice_data[5]
-    ws["C9"] = invoice_data[6]
+    ws["C6"] = invoice_value(invoice_data, "渠道类型")
+    ws["C7"] = "有单证" if invoice_value(invoice_data, "是否退税") == "是" else "无单证"
+    ws["C8"] = invoice_value(invoice_data, "送货时间")
+    ws["C9"] = invoice_value(invoice_data, "预约船期")
     ws["C10"] = "深圳仓"
 
     image_errors = []
@@ -31,8 +35,8 @@ def fill_chidao_sheet(ws, global_info, package_dict, invoice_data, ship_data, st
     total_box_num = 0
 
     for product_type, data in (ship_data.get("list_data") or {}).items():
-        ws.cell(row=current_row, column=1, value=invoice_data[0])
-        ws.cell(row=current_row, column=2, value=invoice_data[1])
+        ws.cell(row=current_row, column=1, value=invoice_value(invoice_data, "货件ID"))
+        ws.cell(row=current_row, column=2, value=invoice_value(invoice_data, "追踪编号"))
 
         package_data = package_dict.get(product_type)
         insert_image_into_cell(ws, package_data, current_row, img_attr, image_errors, cell_anchor="C")
@@ -63,7 +67,7 @@ def fill_chidao_sheet(ws, global_info, package_dict, invoice_data, ship_data, st
         ws.cell(row=current_row, column=18, value=global_info.get("Usr_For"))
         ws.cell(row=current_row, column=20, value=global_info.get("Brand"))
 
-        ws.cell(row=current_row, column=21, value=invoice_data[7])
+        ws.cell(row=current_row, column=21, value=invoice_value(invoice_data, "货件创建时间"))
         ws.cell(row=current_row, column=22, value="中国")
 
         current_row += 1
