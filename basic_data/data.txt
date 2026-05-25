@@ -1,0 +1,6 @@
+Product_Name_Cn=毛巾
+Product_Name_En=Towel
+HS_Code=6302910000
+Material=纯棉/Cotton
+Usr_For=清洁/Clean
+Brand=SEMAXE
