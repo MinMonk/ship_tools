@@ -9,6 +9,7 @@ from src.utils.excel_utils import insert_image_into_cell, img_attr, center_style
 from src.utils.common_utils import format_current_date, root_dir
 from src.constants.carriers import Carrier
 from src.constants.dir_types import DirType
+from src.summary.process_summary import summarize_shipment
 
 logger = logging.getLogger(__name__)
 
@@ -158,11 +159,15 @@ def parse_shipment_csv(directory_path, product_dict):
 
         # 从第 11 行（索引10）开始解析商品列表，并按 product_type 汇总数量和箱数
         list_data = {}
+        sku_set = set()
         for row in rows[10:]:
             # 检查该行是否有足够的列（至少 15 列）
             if len(row) < 15:
                 continue
+            sku = row[0].strip()
             asin = row[2].strip()
+            if sku:
+                sku_set.add(sku)
             # 根据 ASIN 在 product_dict 中查找对应的 "套装类型"
             product_type = product_dict.get(asin, {}).get("套装类型", "Unknown")
             if product_type == "Unknown":
@@ -190,7 +195,8 @@ def parse_shipment_csv(directory_path, product_dict):
         # 将解析结果存入 final_result，使用货件编号作为 key
         final_result[shipment_number] = {
             "shipment_info": shipment_info,
-            "list_data": list_data
+            "list_data": list_data,
+            "sku_set": sku_set
         }
 
     return final_result
@@ -776,23 +782,35 @@ def run_invoice(global_info, product_dict, package_dict):
         shipment_id = invoice_record[0]
         invoice_type = invoice_record[3]
         repo_name = invoice_record[8]
+        current_ship_data = ship_data.get(shipment_id)
+
+        def log_invoice_summary():
+            logger.info(f"汇总: {summarize_shipment(current_ship_data, package_dict)}")
+            logger.info("\033[33m ------------------------------------------------------------------------------ \033[0m")
+
         if invoice_type == Carrier.NiuKu:
-            fill_niuku_template(global_info, package_dict, invoice_record, ship_data.get(shipment_id))
+            fill_niuku_template(global_info, package_dict, invoice_record, current_ship_data)
             logger.info(f"【{shipment_id}】-【{repo_name}】开具[紐酷]发票成功...")
+            log_invoice_summary()
         elif invoice_type == Carrier.PengChengHai:
-            fill_pengchenghai_template(global_info, package_dict, invoice_record, ship_data.get(shipment_id))
+            fill_pengchenghai_template(global_info, package_dict, invoice_record, current_ship_data)
             logger.info(f"【{shipment_id}】-【{repo_name}】开具[鹏城海]发票成功...")
+            log_invoice_summary()
         elif invoice_type == Carrier.YiGang:
-            fill_yigang_template(global_info, package_dict, invoice_record, ship_data.get(shipment_id))
+            fill_yigang_template(global_info, package_dict, invoice_record, current_ship_data)
             logger.info(f"【{shipment_id}】-【{repo_name}】开具[壹港]发票成功...")
+            log_invoice_summary()
         elif invoice_type == Carrier.BaiLiTong:
-            fill_bailitong_template(global_info, package_dict, invoice_record, ship_data.get(shipment_id))
+            fill_bailitong_template(global_info, package_dict, invoice_record, current_ship_data)
             logger.info(f"【{shipment_id}】-【{repo_name}】开具[百利通]发票成功...")
+            log_invoice_summary()
         elif invoice_type == Carrier.ChiDao:
-            fill_chidao_template(global_info, package_dict, invoice_record, ship_data.get(shipment_id))
+            fill_chidao_template(global_info, package_dict, invoice_record, current_ship_data)
             logger.info(f"【{shipment_id}】-【{repo_name}】开具[赤道]发票成功...")
+            log_invoice_summary()
         elif invoice_type == Carrier.YiTongAnDa:
-            fill_yitonganda_template(global_info, package_dict, invoice_record, ship_data.get(shipment_id))
+            fill_yitonganda_template(global_info, package_dict, invoice_record, current_ship_data)
             logger.info(f"【{shipment_id}】-【{repo_name}】开具[易通安达]发票成功...")
+            log_invoice_summary()
         else:
             logger.info(f"未知的发票类型: {invoice_type}")

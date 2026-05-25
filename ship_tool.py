@@ -6,6 +6,7 @@ from src.utils.common_utils import setup_logging, load_basic_data
 from src.fba_label.process_fba_label import process_fba_label
 from src.invoice.process_ship_invoice import run_invoice
 from src.plan.process_ship_plan import run_plan
+from src.summary.process_summary import run_summary
 
 def main():
     parser = argparse.ArgumentParser(
@@ -16,7 +17,8 @@ def main():
             '  invoice: 根据亚马逊后台货件装箱单数据，结合 plan_data/开票信息.xlsx，\n'
             '           生成货代公司的交接资料(发票)。可选标签处理模式: FIST 或 SEND\n'
             '  plan   : 根据 plan_data/出货计划.xlsx，创建亚马逊后台批量货件模板及\n'
-            '           领星 ERP 出货计划模板，方便导入系统'
+            '           领星 ERP 出货计划模板，方便导入系统\n'
+            '  summary: 汇总 shipment_data 下全部装箱单的箱数、盒数、SKU、体积和重量'
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=(
@@ -27,8 +29,8 @@ def main():
     )
     parser.add_argument(
         'command',
-        choices=['invoice', 'plan'],
-        help='指定要执行的功能: invoice 或 plan'
+        choices=['invoice', 'plan', 'summary'],
+        help='指定要执行的功能: invoice、plan 或 summary'
     )
     parser.add_argument(
         'invoice_mode',
@@ -40,7 +42,7 @@ def main():
     )
     args = parser.parse_args()
 
-    if args.command == 'plan' and args.invoice_mode != 'FIST':
+    if args.command != 'invoice' and args.invoice_mode != 'FIST':
         parser.error('invoice_mode 参数仅支持 invoice 命令')
 
     # 初始化日志
@@ -72,6 +74,10 @@ def main():
         logger.info(f"\033[36m▶ PLAN 开始执行  \033[0m")
         run_plan(global_info, package_dict)
         logger.info(f"\033[36m▶ PLAN 执行完毕  \033[0m")
+    elif args.command == 'summary':
+        logger.info(f"\033[36m▶ SUMMARY 开始执行  \033[0m")
+        run_summary(product_dict, package_dict)
+        logger.info(f"\033[36m▶ SUMMARY 执行完毕  \033[0m")
     else:
         logger.error(f'未知命令: {args.command}')
 
