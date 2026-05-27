@@ -6,6 +6,7 @@ import csv
 import openpyxl
 from src.invoice.process_chidao import fill_chidao_template
 from src.invoice.process_jiufang import validate_jiufang_partner_files, fill_jiufang_template
+from src.invoice.process_lianyu import fill_lianyu_template
 from src.utils.excel_utils import insert_image_into_cell, img_attr, center_style, left_newline, copy_row_style
 from src.utils.common_utils import format_current_date, root_dir
 from src.constants.carriers import Carrier
@@ -848,6 +849,10 @@ def run_invoice(global_info, product_dict, package_dict):
 
             fill_jiufang_template(global_info, product_dict, package_dict, invoice_record, jiufang_files[shipment_id])
             logger.info(f"【{shipment_id}】-【{repo_name}】开具[九方]发票成功...")
+            log_invoice_summary()
+        elif invoice_type == Carrier.LianYu:
+            fill_lianyu_template(global_info, package_dict, invoice_record, current_ship_data)
+            logger.info(f"【{shipment_id}】-【{repo_name}】开具[联宇]发票成功...")
             log_invoice_summary()
         else:
             logger.info(f"未知的发票类型: {invoice_type}")

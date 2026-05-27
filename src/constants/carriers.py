@@ -6,3 +6,4 @@ class Carrier:
     YiGang = "壹港"
     BaiLiTong = "百利通"
     JiuFang = "九方"
+    LianYu = "联宇"

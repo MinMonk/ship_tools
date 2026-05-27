@@ -228,6 +228,7 @@ output/yyyyMMdd/唛头/唛头_FBA19D6YR2MZ_51.pdf
 - `壹港`
 - `百利通`
 - `九方`
+- `联宇`
 
 物流商名称需要填写在 `plan_data/开票信息.xlsx` 的 `物流商` 列中。
 
@@ -400,6 +401,7 @@ ship_partner/九方/   # 仅九方需要
 - `src/invoice/process_ship_invoice.py`: invoice 主流程。
 - `src/invoice/process_chidao.py`: 赤道特殊处理。
 - `src/invoice/process_jiufang.py`: 九方资料填充。
+- `src/invoice/process_lianyu.py`: 联宇发票填充。
 - `src/fba_label/process_fba_label.py`: FBA 外箱标和唛头 PDF 处理。
 - `src/summary/process_summary.py`: 货件汇总。
 - `src/utils/common_utils.py`: 基础数据加载、日志、日期和输出目录。
