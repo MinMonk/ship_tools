@@ -6,6 +6,7 @@ from src.utils.common_utils import setup_logging, load_basic_data
 from src.fba_label.process_fba_label import process_fba_label
 from src.invoice.process_ship_invoice import read_invoice_mode, run_invoice, shipment_input_dir, validate_shipment_input_dir
 from src.plan.process_ship_plan import run_plan
+from src.price.process_ship_price import run_calc
 from src.summary.process_summary import run_summary
 
 def main():
@@ -18,7 +19,8 @@ def main():
             '           生成货代公司的交接资料(发票)，并按 G1 物流模式处理标签\n'
             '  plan   : 根据 plan_data/出货计划.xlsx，创建亚马逊后台批量货件模板及\n'
             '           领星 ERP 出货计划模板，方便导入系统\n'
-            '  summary: 汇总 shipment_data 下全部装箱单的箱数、盒数、SKU、体积和重量'
+            '  summary: 汇总 shipment_data 下全部装箱单的箱数、盒数、SKU、体积和重量\n'
+            '  calc   : 根据 summary 重量和 shipment_data/ship_price.xlsx 计算海运费'
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=(
@@ -28,8 +30,8 @@ def main():
     )
     parser.add_argument(
         'command',
-        choices=['invoice', 'plan', 'summary'],
-        help='指定要执行的功能: invoice、plan 或 summary'
+        choices=['invoice', 'plan', 'summary', 'calc'],
+        help='指定要执行的功能: invoice、plan、summary 或 calc'
     )
     args = parser.parse_args()
 
@@ -73,6 +75,12 @@ def main():
         logger.info(f"\033[36m▶ SUMMARY 开始执行  \033[0m")
         run_summary(product_dict, package_dict)
         logger.info(f"\033[36m▶ SUMMARY 执行完毕  \033[0m")
+    elif args.command == 'calc':
+        # 加载 basic_data 下的全局缓存
+        global_info, product_dict, package_dict = load_basic_data()
+        logger.info(f"\033[36m▶ CALC 开始执行  \033[0m")
+        run_calc(product_dict, package_dict)
+        logger.info(f"\033[36m▶ CALC 执行完毕  \033[0m")
     else:
         logger.error(f'未知命令: {args.command}')
 

@@ -219,4 +219,6 @@ __marimo__/
 
 # Project data and generated output
 .DS_Store
+shipment_data/FIST/
+shipment_data/SEND/
 output/
