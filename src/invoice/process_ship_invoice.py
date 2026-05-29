@@ -21,12 +21,14 @@ INVOICE_HEADERS = [
     "仓库代码",
     "是否退税",
     "物流商",
-    "物流模式",
     "渠道类型",
     "送货时间",
     "预约船期",
     "货件创建时间",
 ]
+
+INVOICE_MODE_CELL = "G1"
+INVOICE_MODES = {"FIST", "SEND"}
 
 
 def invoice_output_path(carrier, repo_name, total_box_num):
@@ -50,6 +52,21 @@ def invoice_value(row, key):
     return row.get(key)
 
 
+def read_invoice_mode(file_path="./plan_data/开票信息.xlsx"):
+    wb = openpyxl.load_workbook(file_path, read_only=True, data_only=True)
+    ws = wb["开票信息"] if "开票信息" in wb.sheetnames else wb.active
+    value = ws[INVOICE_MODE_CELL].value
+    wb.close()
+
+    if value is None or str(value).strip() == "":
+        sys.exit("Excel数据校验失败，请在开票信息.xlsx 的 G1 单元格选择物流模式。")
+
+    mode = str(value).strip().upper()
+    if mode not in INVOICE_MODES:
+        sys.exit("Excel数据校验失败，开票信息.xlsx 的 G1 单元格物流模式只允许填写 FIST 或 SEND。")
+    return mode
+
+
 def validate_row(row):
     """
     对单行数据进行非空校验：
@@ -67,10 +84,8 @@ def validate_row(row):
     
     mode = row.get("物流商")
     if mode == "赤道":
-        # 赤道模式要求除物流模式外的业务字段都不能为空；物流模式当前仅占位。
+        # 赤道模式要求业务字段都不能为空。
         for header in INVOICE_HEADERS:
-            if header == "物流模式":
-                continue
             if row.get(header) is None or str(row.get(header)).strip() == "":
                 if header not in missing:
                     missing.append(header)
