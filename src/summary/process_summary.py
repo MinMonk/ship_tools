@@ -1,8 +1,13 @@
 import logging
-from typing import Dict, Any
+import csv
+from pathlib import Path
+from typing import Dict, Any, Optional
 
 
 logger = logging.getLogger(__name__)
+
+SUMMARY_MODES = ("FIST", "SEND")
+SHIPMENT_DATA_ROOT = Path("./shipment_data")
 
 
 def summarize_shipment(ship_data: Dict[str, Any], package_dict: Dict[str, Dict]) -> Dict[str, Any]:
@@ -56,18 +61,107 @@ def summarize_shipment(ship_data: Dict[str, Any], package_dict: Dict[str, Dict])
     }
 
 
+def parse_summary_csv_file(csv_path: Path, product_dict: Dict[str, Dict], mode: str) -> Optional[Dict[str, Any]]:
+    try:
+        with csv_path.open("r", encoding="utf-8-sig") as f:
+            rows = list(csv.reader(f))
+    except Exception as exc:
+        logger.info(f"读取文件 {csv_path.name} 失败：{exc}")
+        return None
+
+    if len(rows) < 10:
+        logger.info(f"文件 {csv_path.name} 行数不足 10 行，跳过。")
+        return None
+
+    shipment_info = {}
+    for row in rows[:9]:
+        if len(row) < 2:
+            continue
+        key = row[0].strip()
+        value = row[1].strip()
+        if key:
+            shipment_info[key] = value
+
+    if mode == "SEND":
+        warehouse_name = csv_path.stem
+    else:
+        warehouse_name = shipment_info.get("仓库名称") or shipment_info.get("货件名称", "").split("-")[-1] or csv_path.stem
+    shipment_info["仓库名称"] = warehouse_name
+
+    shipment_number = shipment_info.get("货件编号") or csv_path.stem
+    list_data = {}
+    sku_set = set()
+
+    for row in rows[10:]:
+        if len(row) < 15:
+            continue
+        sku = row[0].strip()
+        asin = row[2].strip()
+        if sku:
+            sku_set.add(sku)
+
+        product_type = product_dict.get(asin, {}).get("套装类型", "Unknown")
+        if product_type == "Unknown":
+            raise ValueError(f"找不到{asin}的包装信息，请检查...")
+
+        try:
+            quantity = int(row[13].strip())
+        except ValueError:
+            quantity = 0
+        try:
+            boxes = int(row[12].strip())
+        except ValueError:
+            boxes = 0
+
+        package_seq_num = row[14].strip().replace(shipment_number, "")
+        if product_type not in list_data:
+            list_data[product_type] = {"total_num": 0, "total_boxes": 0, "package_seq": []}
+        list_data[product_type]["total_num"] += quantity
+        list_data[product_type]["total_boxes"] += boxes
+        if package_seq_num:
+            list_data[product_type]["package_seq"].append(package_seq_num)
+
+    return {
+        "shipment_info": shipment_info,
+        "list_data": list_data,
+        "sku_set": sku_set,
+    }
+
+
+def load_summary_shipments(mode: str, product_dict: Dict[str, Dict]) -> Dict[str, Dict[str, Any]]:
+    input_dir = SHIPMENT_DATA_ROOT / mode
+    if not input_dir.is_dir():
+        return {}
+
+    csv_files = sorted(path for path in input_dir.iterdir() if path.is_file() and path.suffix.lower() == ".csv")
+    if not csv_files:
+        return {}
+
+    shipments = {}
+    for csv_path in csv_files:
+        ship_data = parse_summary_csv_file(csv_path, product_dict, mode)
+        if not ship_data:
+            continue
+        warehouse_name = (ship_data.get("shipment_info") or {}).get("仓库名称") or csv_path.stem
+        shipments[f"{mode}-{warehouse_name}"] = ship_data
+    return shipments
+
+
 def run_summary(product_dict: Dict[str, Dict], package_dict: Dict[str, Dict]) -> Dict[str, Dict[str, Any]]:
     """
-    summary 命令入口：读取 shipment_data 下全部装箱单 CSV 并输出仓库维度汇总。
+    summary 命令入口：分别读取 shipment_data/FIST 和 shipment_data/SEND 下的装箱单 CSV。
     """
-    from src.invoice.process_ship_invoice import parse_shipment_csv
-
-    shipment_data = parse_shipment_csv("./shipment_data/", product_dict)
     summaries = {}
-    for shipment_id, ship_data in shipment_data.items():
-        repo_name = (ship_data.get("shipment_info") or {}).get("仓库名称")
-        summary = summarize_shipment(ship_data, package_dict)
-        summaries[shipment_id] = summary
-        logger.info(f"【{shipment_id}】-【{repo_name}】: {summary}")
+    for mode in SUMMARY_MODES:
+        logger.info(f"▶ {mode} 汇总")
+        shipment_data = load_summary_shipments(mode, product_dict)
+        if not shipment_data:
+            logger.info("暂无数据")
+            continue
+
+        for summary_key, ship_data in shipment_data.items():
+            summary = summarize_shipment(ship_data, package_dict)
+            summaries[summary_key] = summary
+            logger.info(f"【{summary_key}】: {summary}")
 
     return summaries
