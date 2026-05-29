@@ -170,8 +170,7 @@ def process_send_mark_pdf(input_pdf_path, filename):
     logger.debug(f"  已处理 SEND 唛头: {filename}")
 
 
-def process_fba_label(region: str = "US", mode: str = "FIST", label_type: str = "fba") -> str:
-    input_dir = './shipment_data'
+def process_fba_label(region: str = "US", mode: str = "FIST", label_type: str = "fba", input_dir: str = "./shipment_data") -> str:
     label_type = label_type.lower()
     output_path = root_dir(DirType.Mark_Label if label_type == "mark" else DirType.FBA_Label)
     os.makedirs(output_path, exist_ok=True)
@@ -201,7 +200,7 @@ def process_fba_label(region: str = "US", mode: str = "FIST", label_type: str = 
     # 处理文件
     processed_files = 0
     for filename in os.listdir(input_dir):
-        if filename.endswith('.pdf'):
+        if filename.lower().endswith('.pdf'):
             input_pdf_path = os.path.join(input_dir, filename)
             if label_type == "mark":
                 if mode == "SEND":

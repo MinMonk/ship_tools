@@ -39,8 +39,12 @@ plan_data/
   开票信息.xlsx              invoice 命令输入
 
 shipment_data/
-  *.csv                    Amazon 后台导出的装箱单
-  *.pdf                    Amazon 生成的外箱标签 PDF
+  FIST/                    FIST 模式输入目录
+    *.csv                  Amazon 后台导出的装箱单
+    *.pdf                  Amazon 生成的外箱标签 PDF
+  SEND/                    SEND 模式输入目录
+    *.csv                  Amazon 后台导出的装箱单
+    *.pdf                  Amazon 生成的外箱标签 PDF
 
 ship_partner/
   九方/*.xlsx               九方清关资料 Excel，文件名需以货件 ID 结尾
@@ -55,7 +59,7 @@ src/
   summary/                 货件汇总逻辑
 ```
 
-`shipment_data/` 和 `output/` 已加入 `.gitignore`，适合放临时输入和生成结果。
+`output/` 已加入 `.gitignore`，适合放生成结果。`shipment_data/` 不再忽略，后续可提交模式目录和价格配置文件。
 
 ## 基础数据说明
 
@@ -152,8 +156,8 @@ python3 ship_tool.py invoice
 输入：
 
 - `plan_data/开票信息.xlsx`
-- `shipment_data/*.csv`
-- `shipment_data/*.pdf`
+- `shipment_data/FIST/*.csv` 或 `shipment_data/SEND/*.csv`
+- `shipment_data/FIST/*.pdf` 或 `shipment_data/SEND/*.pdf`
 - `basic_data/data.txt`
 - `basic_data/产品信息.csv`
 - `basic_data/产品包装信息.csv`
@@ -162,18 +166,19 @@ python3 ship_tool.py invoice
 处理逻辑：
 
 - 校验 `开票信息.xlsx` 的 `G1` 物流模式，只允许 `FIST` 或 `SEND`。
+- 根据 `G1` 选择输入目录：`shipment_data/FIST` 或 `shipment_data/SEND`。
 - 读取 `开票信息.xlsx`，逐行按物流商处理。
-- 解析 `shipment_data/` 下全部 Amazon 装箱单 CSV。
+- 解析当前模式目录下全部 Amazon 装箱单 CSV。
 - 根据物流商调用对应模板填充逻辑。
 - 每个仓库发票生成后输出当前仓库汇总。
 
-`G1 = FIST` 时，处理 `shipment_data/` 中的 FBA 外箱标签 PDF，执行当前裁剪逻辑。
+`G1 = FIST` 时，处理 `shipment_data/FIST/` 中的 FBA 外箱标签 PDF，执行当前裁剪逻辑。
 
 ```text
 output/yyyyMMdd/fba_label/原PDF文件名.pdf
 ```
 
-`G1 = SEND` 时，适用于 Amazon 生成的 PDF 中奇偶页混合的场景：
+`G1 = SEND` 时，处理 `shipment_data/SEND/` 中的 PDF，适用于 Amazon 生成的 PDF 中奇偶页混合的场景：
 
 - 奇数页：FBA 外箱标。
 - 偶数页：唛头。
@@ -300,7 +305,13 @@ python3 ship_tool.py summary
 
 ## 装箱单要求
 
-`shipment_data/` 下的 CSV 应为 Amazon 后台导出的装箱单。
+`shipment_data/FIST/` 和 `shipment_data/SEND/` 下的 CSV 应为 Amazon 后台导出的装箱单。`invoice` 会按 `开票信息.xlsx` 的 `G1` 物流模式只读取对应目录。
+
+校验规则：
+
+- 对应模式目录不存在时终止。
+- 对应模式目录没有 CSV 时终止。
+- 对应模式目录没有 PDF 时打印 warning，发票仍会继续生成。
 
 解析逻辑依赖：
 
@@ -320,6 +331,8 @@ python3 ship_tool.py summary
 basic_data/
 plan_data/
 shipment_data/
+  FIST/
+  SEND/
 ship_partner/九方/   # 仅九方需要
 ```
 

@@ -4,7 +4,7 @@ import logging
 
 from src.utils.common_utils import setup_logging, load_basic_data
 from src.fba_label.process_fba_label import process_fba_label
-from src.invoice.process_ship_invoice import read_invoice_mode, run_invoice
+from src.invoice.process_ship_invoice import read_invoice_mode, run_invoice, shipment_input_dir, validate_shipment_input_dir
 from src.plan.process_ship_plan import run_plan
 from src.summary.process_summary import run_summary
 
@@ -39,23 +39,26 @@ def main():
 
     if args.command == 'invoice':
         invoice_mode = read_invoice_mode()
+        shipment_data_dir = shipment_input_dir(invoice_mode)
+        validate_shipment_input_dir(shipment_data_dir)
+        logger.info(f"\033[36m▶ 物流模式：{invoice_mode}，输入目录：{shipment_data_dir}\033[0m")
         # 加载 basic_data 下的全局缓存
         global_info, product_dict, package_dict = load_basic_data()
         logger.info(f"\033[36m▶ INVOICE 开始执行  \033[0m")
-        run_invoice(global_info, product_dict, package_dict)
+        run_invoice(global_info, product_dict, package_dict, shipment_data_dir)
         logger.info(f"\033[36m▶ INVOICE 执行完毕  \033[0m")
 
         logger.info("\033[33m ----------------------------------------------- \033[0m")
 
         logger.info(f"\033[36m▶ 裁剪【FBA外箱标】开始执行  \033[0m")
-        process_fba_label(mode=invoice_mode, label_type="fba")
+        process_fba_label(mode=invoice_mode, label_type="fba", input_dir=shipment_data_dir)
         logger.info(f"\033[36m▶ 裁剪【FBA外箱标】执行完毕  \033[0m")
 
         if invoice_mode == 'SEND':
             logger.info("\033[33m ----------------------------------------------- \033[0m")
 
             logger.info(f"\033[36m▶ 裁剪【唛头】开始执行  \033[0m")
-            process_fba_label(mode=invoice_mode, label_type="mark")
+            process_fba_label(mode=invoice_mode, label_type="mark", input_dir=shipment_data_dir)
             logger.info(f"\033[36m▶ 裁剪【唛头】执行完毕  \033[0m")
 
     elif args.command == 'plan':

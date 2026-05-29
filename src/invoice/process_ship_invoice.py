@@ -29,6 +29,7 @@ INVOICE_HEADERS = [
 
 INVOICE_MODE_CELL = "G1"
 INVOICE_MODES = {"FIST", "SEND"}
+SHIPMENT_DATA_ROOT = "./shipment_data"
 
 
 def invoice_output_path(carrier, repo_name, total_box_num):
@@ -65,6 +66,25 @@ def read_invoice_mode(file_path="./plan_data/开票信息.xlsx"):
     if mode not in INVOICE_MODES:
         sys.exit("Excel数据校验失败，开票信息.xlsx 的 G1 单元格物流模式只允许填写 FIST 或 SEND。")
     return mode
+
+
+def shipment_input_dir(mode):
+    return os.path.join(SHIPMENT_DATA_ROOT, mode.upper())
+
+
+def validate_shipment_input_dir(input_dir):
+    if not os.path.isdir(input_dir):
+        sys.exit(f"物流模式对应的输入目录不存在：{input_dir}")
+
+    csv_files = [name for name in os.listdir(input_dir) if name.lower().endswith(".csv")]
+    if not csv_files:
+        sys.exit(f"输入目录 {input_dir} 下未找到装箱单 CSV 文件。")
+
+    pdf_files = [name for name in os.listdir(input_dir) if name.lower().endswith(".pdf")]
+    if not pdf_files:
+        logger.warning(f"输入目录 {input_dir} 下未找到外箱标签 PDF 文件，将跳过标签处理。")
+
+    return {"csv_count": len(csv_files), "pdf_count": len(pdf_files)}
 
 
 def validate_row(row):
@@ -810,7 +830,7 @@ def fill_yitonganda_template(global_info, package_dict, invoice_data, ship_data,
         for err in image_errors:
             logger.info(err)
 
-def run_invoice(global_info, product_dict, package_dict):
+def run_invoice(global_info, product_dict, package_dict, shipment_data_dir):
     """
     Invoice 功能入口：解析 & 校验 开票信息 → 解析装箱数据 → 调用各渠道模板填充
     """
@@ -820,7 +840,7 @@ def run_invoice(global_info, product_dict, package_dict):
     logger.info('【开票信息】解析 & 校验完成...')
 
     # 加载 Amazon 后台下载的装箱数据
-    ship_data = parse_shipment_csv('./shipment_data/', product_dict)
+    ship_data = parse_shipment_csv(shipment_data_dir, product_dict)
     logger.info('【装箱数据】加载完成...')
 
     # 基于./开票信息.csv 文件中维护的数据来生成发票
