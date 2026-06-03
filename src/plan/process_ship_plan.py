@@ -30,14 +30,49 @@ def plan_output_path(country=None):
     return root_dir(DirType.Plan) + f"/Amazon_Shipment_{country}_{date_str}.xlsx"
 
 
+def parse_country_from_sheet_name(sheet_name: str):
+    parts = sheet_name.rsplit('-', 1)
+    if len(parts) < 2:
+        logger.warning(f"sheet 页【{sheet_name}】不是以 US 或 CA 结尾的发货计划 sheet，已跳过")
+        return None
+
+    country = parts[-1].upper()
+    if country not in {"US", "CA"}:
+        logger.warning(f"sheet 页【{sheet_name}】不是以 US 或 CA 结尾的发货计划 sheet，已跳过")
+        return None
+    return country
+
+
+def parse_plan_sheet(xls: pd.ExcelFile, sheet_name: str) -> Tuple[List[Tuple[str, str, int]], str, str]:
+    country = parse_country_from_sheet_name(sheet_name)
+    if country is None:
+        return [], None, sheet_name
+
+    df = xls.parse(sheet_name)
+    if '颜色' not in df.columns:
+        logger.error(f"sheet 页【{sheet_name}】缺少必需列: '颜色'")
+        raise ValueError(f"sheet 页【{sheet_name}】缺少必需列: '颜色'")
+
+    records: List[Tuple[str, str, int]] = []
+    for _, row in df.iterrows():
+        color = str(row['颜色']).strip()
+        for size in df.columns[1:]:
+            raw = row[size]
+            if pd.notna(raw) and raw != 0:
+                quantity = int(raw)
+                records.append((color, str(size).strip(), quantity))
+    return records, country, sheet_name
+
+
 def read_plan_data(
-    file_path: str = './plan_data/出货计划.xlsx'
-) -> Tuple[List[Tuple[str, str, int]], str, str]:
+    file_path: str = './plan_data/出货计划.xlsx',
+    country_filter: str = None,
+) -> List[Tuple[List[Tuple[str, str, int]], str, str]]:
     """
-    读取出货计划 Excel 的首个 sheet，格式化输出记录、国家代码和 sheet 名称
+    读取出货计划 Excel 的所有有效 sheet，格式化输出记录、国家代码和 sheet 名称
 
     :param file_path: 出货计划文件路径
-    :return: (records, country, sheet_name)
+    :return: [(records, country, sheet_name), ...]
         records: 列表，每条为 (color, size, quantity)
         country: sheet 名最后一节（以 '-' 分割），若无则 'US'
         sheet_name: 使用的 sheet 名称
@@ -49,24 +84,15 @@ def read_plan_data(
         raise FileNotFoundError(f"找不到文件: {file_path}")
 
     xls = pd.ExcelFile(file_path)
-    sheet_name = xls.sheet_names[0]
-    parts = sheet_name.split('-')
-    country = parts[-1] if len(parts) > 1 and parts[-1] else 'US'
-
-    df = xls.parse(sheet_name)
-    if '颜色' not in df.columns:
-        logger.error("缺少必需列: '颜色'")
-        raise ValueError("缺少必需列: '颜色'")
-
-    records: List[Tuple[str, str, int]] = []
-    for _, row in df.iterrows():
-        color = str(row['颜色']).strip()
-        for size in df.columns[1:]:
-            raw = row[size]
-            if pd.notna(raw) and raw != 0:
-                quantity = int(raw)
-                records.append((color, str(size).strip(), quantity))
-    return records, country, sheet_name
+    plan_data = []
+    for sheet_name in xls.sheet_names:
+        records, country, parsed_sheet_name = parse_plan_sheet(xls, sheet_name)
+        if country is None:
+            continue
+        if country_filter and country != country_filter:
+            continue
+        plan_data.append((records, country, parsed_sheet_name))
+    return plan_data
 
 
 def write_amazon_plan(
@@ -83,6 +109,7 @@ def write_amazon_plan(
     :param template_path: 模板文件路径
     :return: 输出文件路径
     """
+    country = country.upper()
     if country == "CA":
         template_path = './basic_data/template/plan/Amazon_Shipment_CA.xlsx'
     else:
@@ -98,7 +125,15 @@ def write_amazon_plan(
     thin = Side(border_style='thin', color='000000')
     border = Border(left=thin, right=thin, top=thin, bottom=thin)
 
-    start_row = 7
+    if country == "CA":
+        ws["B3"] = "Seller"
+        ws["B4"] = "Seller"
+        start_row = 9
+        cols = [1, 2, 7, 8, 9, 10, 11, 12]
+    else:
+        start_row = 7
+        cols = [1, 2, 5, 6, 7, 8, 9, 10]
+
     for idx, (sku, size, qty) in enumerate(records):
         row = start_row + idx
         pkg = package_dict.get(size) or {}
@@ -127,7 +162,6 @@ def write_amazon_plan(
             logger.warning(f"请确认SKU: {sku} 单箱数量为0, 当前已忽略该SKU")
             continue
 
-        cols = [1, 2, 5, 6, 7, 8, 9, 10]
         values = [sku, qty, box_size, box_num, length, width, height, weight]
         for col, val in zip(cols, values):
             cell = ws.cell(row=row, column=col, value=val)
@@ -247,8 +281,9 @@ def summarize_plan(
 
 def run_plan(
     global_info: pd.DataFrame,
-    package_dict: Dict[str, Dict]
-) -> Tuple[str, str, Dict[str, Any]]:
+    package_dict: Dict[str, Dict],
+    country_filter: str = None,
+) -> List[Tuple[str, Dict[str, Any]]]:
     """
     plan 功能入口：
       1. 读取出货计划数据
@@ -260,25 +295,38 @@ def run_plan(
     :param package_dict: 包装信息
     :return: (amazon_path, erp_path, summary)
     """
-    records, country, sheet_name = read_plan_data()
+    country_filter = country_filter.upper() if country_filter else None
+    plan_data = read_plan_data(country_filter=country_filter)
+    if country_filter and not plan_data:
+        logger.info(f"【{country_filter}】该国家没有出货计划")
+        return []
+
     product_data = parse_csv_to_dict2(
         './basic_data/产品信息.csv', ['颜色', '套装类型']
     )
 
-    amazon_records: List[Tuple[str, str, int]] = []
-    erp_records: List[Tuple[str, str, str, int, str]] = []
-    for color, size, qty in records:
-        key = f"{color}-{size}"
-        info = product_data.get(key)
-        if not info:
-            logger.warning(f"未找到产品信息: {key}")
+    results = []
+    for records, country, sheet_name in plan_data:
+        if not records:
+            logger.info(f"【{country}】该国家没有出货计划")
             continue
-        sku = info['SKU']
-        fnsku = info['FNSKU']
-        amazon_records.append((sku, size, qty))
-        erp_records.append((sku, fnsku, size, qty, color))
 
-    amazon_path = write_amazon_plan(amazon_records, package_dict, country)
-    erp_path = write_erp_plan(erp_records, package_dict, sheet_name)
-    summary = summarize_plan(amazon_records, package_dict)
-    return amazon_path, erp_path, summary
+        amazon_records: List[Tuple[str, str, int]] = []
+        for color, size, qty in records:
+            key = f"{color}-{size}"
+            info = product_data.get(key)
+            if not info:
+                logger.warning(f"未找到产品信息: {key}")
+                continue
+            sku = info['SKU']
+            amazon_records.append((sku, size, qty))
+
+        if not amazon_records:
+            logger.info(f"【{country}】该国家没有出货计划")
+            continue
+
+        amazon_path = write_amazon_plan(amazon_records, package_dict, country)
+        summary = summarize_plan(amazon_records, package_dict)
+        results.append((amazon_path, summary))
+
+    return results

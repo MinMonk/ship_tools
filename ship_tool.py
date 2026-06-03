@@ -33,7 +33,17 @@ def main():
         choices=['invoice', 'plan', 'summary', 'calc'],
         help='指定要执行的功能: invoice、plan、summary 或 calc'
     )
+    parser.add_argument(
+        'plan_country',
+        nargs='?',
+        type=str.upper,
+        choices=['US', 'CA'],
+        help='plan 命令可选国家参数，仅支持 US 或 CA'
+    )
     args = parser.parse_args()
+
+    if args.command != 'plan' and args.plan_country:
+        parser.error('plan_country 参数仅支持 plan 命令')
 
     # 初始化日志
     setup_logging()
@@ -67,7 +77,7 @@ def main():
         # 加载 basic_data 下的全局缓存
         global_info, product_dict, package_dict = load_basic_data()
         logger.info(f"\033[36m▶ PLAN 开始执行  \033[0m")
-        run_plan(global_info, package_dict)
+        run_plan(global_info, package_dict, args.plan_country)
         logger.info(f"\033[36m▶ PLAN 执行完毕  \033[0m")
     elif args.command == 'summary':
         # 加载 basic_data 下的全局缓存
